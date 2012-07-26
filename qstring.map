@@ -1,0 +1,30 @@
+TYPEMAP
+QString      T_QSTRING
+QString*     T_QSTRING_PTR
+QVariant     T_QVARIANT
+QVariantMap  T_QVARIANT_MAP
+
+INPUT
+T_QSTRING
+	{
+
+		if (SvTYPE($arg) != SVt_PV) {
+			warn(\"${Package}::$func_name() -- $var is invalid svtype\");
+			XSRETURN_UNDEF;
+		}
+		if (SvCUR($arg) == 0) {
+			warn(\"${Package}::$func_name() -- $var is empty\");
+			XSRETURN_UNDEF;
+		}
+		$var = QString(SvPV_nolen($arg));
+	}
+
+OUTPUT
+T_QSTRING
+	sv_setpvn( $arg, $var.toUtf8().data(), $var.toUtf8().size() );
+
+T_QSTRING_PTR
+	sv_setpvn( $arg, (*$var).toUtf8().data(), (*$var).toUtf8().size() );
+
+T_QVARIANT
+	ConvertQVariant( $arg, $var );
