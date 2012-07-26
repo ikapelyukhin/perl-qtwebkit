@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This script gets first ten Google search results for "Perl" query
+# This script gets the first ten Google search results for "Perl" query
 
 use strict;
 use warnings;
@@ -18,7 +18,7 @@ $Webkit->setResponseCallback( sub {
 	my ( $Webkit, $ok ) = @_;
 	die "Something went wrong" unless ( $ok );
 
-	my $count = $Webkit->evaluateJavaScript( q^
+	$Webkit->evaluateJavaScript( q^
 		function waitForLoad() {
 			if ( document.readyState == "complete" ) {
 				var input = document.querySelector("input[name=q]");
@@ -40,7 +40,7 @@ $Webkit->setResponseCallback( sub {
 	return sub {
 		my ( $Webkit, $ok ) = @_;
 
-		die "Something went wrong: $ok" unless ( $ok );
+		die "Something went wrong" unless ( $ok );
 		
 		$links = $Webkit->evaluateJavaScript(q^
 			var array = new Array();
