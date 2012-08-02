@@ -1,15 +1,17 @@
 #!/usr/bin/perl
 
-use lib("/home/shadowjack/cpp/qt_webkit/lib/", "/home/shadowjack/cpp/qt_webkit/blib/arch/auto/Webkit/");
-use Test::More tests => 14;
+use ExtUtils::testlib;
+use Test::More tests => 16;
+
 use strict;
 use warnings;
+
 BEGIN { 
 	use_ok('Webkit');
 	use_ok('Test::LeakTrace');
 };
 
-my $w = new Webkit();
+my $w = Webkit->new();
 
 # Type conversion
 {
@@ -85,9 +87,12 @@ my $w = new Webkit();
 	ok( $result eq $default_retval && !$result2, "Prompt callback" );
 }
 
+# Network dependent tests
+
+my $net_available;
 SKIP: {
 	my ( $result, $result2, $ok );
-	my $w = new Webkit();
+	my $w = Webkit->new();
 
 	no_leaks_ok {
 		$w->setBridgeCallback( sub { $result = 1; } );
@@ -118,9 +123,43 @@ SKIP: {
 	} );
 
 	if ( !$w->get("http://perl.org/") && $ok ) {
-		ok( $result && $result2, "Final checks" );
+		ok( $result && $result2, "Bridge, getContent checks" );
+		$net_available = 1;
 	} else {
 		skip( "Can't connect to perl.org. The network is down?", 1 );
+	}
+}
+
+SKIP: {
+	if ( $net_available ) {
+		my $w = Webkit->new();
+
+		$w->setResponseCallback( sub {
+			return sub { }; # does nothing. Should hang the event processing loop.
+		} );
+
+		eval {
+			local $SIG{ALRM} = \&die;
+			alarm( 10000 );
+			$w->get( "http://perl.org", { Timeout => 2000 } ); # Just any URL really.
+		};
+
+		ok( !$@, "QTimer timeout" );
+	} else {
+		skip( "Network not available." );
+	}
+}
+
+SKIP: {
+	if ( $net_available ) {
+		my $w = Webkit->new();
+
+		$w->setResponseCallback( sub {} );
+		$w->get( "http://perl.org" );
+		$w->get( "http://perl.org" );
+		pass( "Event loop check, callbacks reuse check." );
+	} else {
+		skip( "Network not available." );
 	}
 }
 

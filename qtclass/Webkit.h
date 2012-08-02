@@ -24,6 +24,9 @@
 #include <QVariant>
 #include <QMetaType>
 #include <QPainter>
+#include <QWebSettings>
+#include <QString>
+#include <QTimer>
 
 #define CALLBACK_RESPONSE           0
 #define CALLBACK_JAVASCRIPT_ALERT   1
@@ -32,27 +35,30 @@
 #define CALLBACK_JAVASCRIPT_PROMPT  4
 #define CALLBACK_BRIDGE             5
 
+#define ERROR_TIMEOUT 1
+
 class Webkit;
 class CallbackPage;
 
 typedef bool (*ResponseCallback)(Webkit*, int, bool);
 typedef void ( *MessageCallback)(Webkit*, int, const QString&, int);
 typedef bool (  *PromptCallback)(Webkit*, int, const QString&, const QString&, QString*);
-typedef void (  *BridgeCallback)(Webkit*, int);
+typedef void (  *BridgeCallback)(Webkit*, int, QVariant*);
 
 class Webkit : public QObject {
     Q_OBJECT
 public:
-    Webkit( ResponseCallback, MessageCallback, PromptCallback, BridgeCallback );
+    Webkit( ResponseCallback, MessageCallback, PromptCallback, BridgeCallback, bool no_images = false, QString user_agent = QString() );
     ~Webkit();
 
     QString getContent();
     QString getUrl();
 
-    int get( QString url_string );
+    int get( QString url_string, unsigned int timeout = 0 );
     QVariant evaluateJavaScript( QString js );
 
     Q_INVOKABLE void bridgeCallback();
+    Q_INVOKABLE void bridgeCallback( QVariant );
     Q_INVOKABLE void finish();
 private:
     CallbackPage* page;
@@ -60,6 +66,10 @@ private:
     QNetworkRequest request;
     ResponseCallback response_callback;
     BridgeCallback bridge_callback;
+    
+    bool loop;
+    int error;
+    QTimer* timer;
 
     static int instances;
     // For any GUI application using Qt, there is precisely one QApplication object, no matter whether the application
@@ -72,7 +82,7 @@ private:
 
 private slots:
     void processResponse( bool ok );
-    //void processResponse( QNetworkReply* reply );
+    void timeout();
 signals:
     void finished();
 };

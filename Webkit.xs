@@ -58,6 +58,7 @@ static map<Webkit*, CALLBACK_INFO> reftable;
 */
 
 void save_callback( Webkit*, int, SV*, SV* );
+void ConvertQVariant( SV*, const QVariant* );
 
 SV* get_callback( Webkit* wk, int callback_type ) {
 	SV* sv;
@@ -181,7 +182,7 @@ bool call_prompt_callback( Webkit* instance, int callback_type, const QString& m
 	return result;
 }
 
-void call_bridge_callback( Webkit* instance, int callback_type ) {
+void call_bridge_callback( Webkit* instance, int callback_type, QVariant* arg ) {
 	SV* sv = get_callback( instance, callback_type );
 
 	if ( !SvOK( sv ) ) return;
@@ -190,7 +191,11 @@ void call_bridge_callback( Webkit* instance, int callback_type ) {
 	ENTER;
 	SAVETMPS;
 	PUSHMARK(SP);
+
 	XPUSHs( reftable[ instance ].sv );
+	SV* temp = sv_2mortal( newSV(0) );
+	ConvertQVariant( temp, arg );
+	XPUSHs( temp );
 
 	PUTBACK;
 
@@ -201,53 +206,52 @@ void call_bridge_callback( Webkit* instance, int callback_type ) {
 }
 
 void save_callback( Webkit* instance, int callback_type, SV* blessed_ref, SV* callback ) {
-	if ( !SvTRUE(callback) ) {
-		sv_setsv( callback, &PL_sv_no );
-	} else if ( SvTYPE(callback) != SVt_RV || SvTYPE( SvRV(callback) ) != SVt_PVCV ) {
+	if ( SvTRUE(callback) && ( SvTYPE(callback) != SVt_RV || SvTYPE( SvRV(callback) ) != SVt_PVCV ) ) {
 		croak("Supplied argument is not a code reference");
 	}
 
 	SV* ptr = get_callback( instance, callback_type );
 
 	if ( !ptr || ptr == (SV*) NULL ) croak( "Whoops, something went terribly wrong" );
-	sv_setsv( ptr, callback );
+	sv_setsv( ptr, SvTRUE(callback) ? callback : &PL_sv_undef );
 	sv_setsv( reftable[ instance ].sv, blessed_ref );
 }
 
 // A recursive routine to convert QVariant to corresponding Perl types
-void ConvertQVariant( SV* arg, QVariant var ){
-	switch ( var.type() ) {
+void ConvertQVariant( SV* arg, const QVariant* var ){
+	if ( var == NULL ) return;
+	switch ( var->type() ) {
 		case QMetaType::Void:
 			sv_setsv( arg, &PL_sv_undef );
 			break;
 
 		case QMetaType::Bool:
-			sv_setsv( arg, var.toBool() ? &PL_sv_yes : &PL_sv_no );
+			sv_setsv( arg, var->toBool() ? &PL_sv_yes : &PL_sv_no );
 			break;
 
 		case QMetaType::Int:
-			sv_setiv( arg, var.toInt() );
+			sv_setiv( arg, var->toInt() );
 			break;
 
 		case QMetaType::UInt:
-			sv_setuv( arg, var.toUInt() );
+			sv_setuv( arg, var->toUInt() );
 			break;
 
 		case QMetaType::Double:
-			sv_setnv( arg, var.toDouble() );
+			sv_setnv( arg, var->toDouble() );
 			break;
 
 		case QMetaType::QVariantMap: {
 			HV* hash = newHV();
 			sv_setsv( arg, sv_2mortal( newRV_noinc( (SV*) hash ) ) );
 
-			QVariantMap* map = (QVariantMap*) &var;
+			QVariantMap* map = (QVariantMap*) var;
 
 			QVariantMap::Iterator i = map->begin();
 			while ( i != map->end() ) {
 				SV* sv = newSV(0);
 				hv_store( hash, i.key().toUtf8().data(), i.key().size(), sv, FALSE );
-				ConvertQVariant( sv, i.value() );
+				ConvertQVariant( sv, &i.value() );
 				++i;
 			}
 			break;
@@ -257,27 +261,27 @@ void ConvertQVariant( SV* arg, QVariant var ){
 			AV* av = newAV();
 			sv_setsv( arg, sv_2mortal( newRV_noinc( (SV*) av ) ) );
 
-			QVariantList* list = (QVariantList*) &var;
+			QVariantList* list = (QVariantList*) var;
 			av_extend( av, list->size() - 1 );
 
 			for ( int i = 0; i < list->size(); i++ ) {
 				SV* sv = newSV(0);
 				av_store( av, i, sv );
-				ConvertQVariant( sv, list->at(i) );
+				ConvertQVariant( sv, &list->at(i) );
 			}
 
 			break;
 		}
 
 		case QMetaType::QString: {
-			QString* str = (QString*) &var;
+			QString* str = (QString*) var;
 			sv_setpvn( arg, str->toUtf8().data(), str->size() );
 			break;
 		}
 
 		default:
 			char buf[50];
-			sprintf( buf, "Conversion for QMetaType == %u is not (yet) supported", var.type() );
+			sprintf( buf, "Conversion for QMetaType == %u is not (yet) supported", var->type() );
 			croak( buf );
 			break;
 	}
@@ -286,13 +290,28 @@ void ConvertQVariant( SV* arg, QVariant var ){
 MODULE = Webkit		PACKAGE = Webkit
 
 Webkit *
-Webkit::new()
+Webkit::new( ... )
 	CODE:
+		bool no_images = false;
+		QString user_agent;
+
+		if( items > 1 && SvROK( ST(1) ) && SvTYPE( SvRV( ST(1) ) ) == SVt_PVHV ) {
+			HV* hash_ref = (HV*) SvRV( ST(1) );
+
+			SV** temp_sv = hv_fetch( hash_ref, "NoImages", 8, 0 );
+			if ( temp_sv != NULL ) no_images = SvTRUE( *temp_sv );
+
+			temp_sv = hv_fetch( hash_ref, "UserAgent", 9, 0 );
+			if ( temp_sv != NULL ) user_agent = SvPV_nolen( *temp_sv );
+		}
+
 		Webkit* wk = new Webkit(
 			&call_response_callback,
 			&call_message_callback,
 			&call_prompt_callback,
-			&call_bridge_callback
+			&call_bridge_callback,
+			no_images,
+			user_agent
 		);
 
 		// initially callback SVs hold undefined values
@@ -342,15 +361,17 @@ Webkit::setBridgeCallback( SV* func )
 		save_callback( THIS, CALLBACK_BRIDGE, ST(0), func );
 
 int
-Webkit::get( url_string )
+Webkit::get( url_string, ... )
 	QString url_string
 	CODE:
-		/*if( items > 2 ) {
-			SV* func = ST(2);
-			save_callback( THIS, CALLBACK_RESPONSE, ST(0), func );
-		}*/
+		unsigned int timeout = 0;
+		if( items > 2 && SvROK( ST(2) ) && SvTYPE( SvRV( ST(2) ) ) == SVt_PVHV ) {
+			HV* hash_ref = (HV*) SvRV( ST(2) );
+			SV** timeout_sv = hv_fetch( hash_ref, "Timeout", 7, 0 );
+			if ( timeout_sv != NULL ) timeout = SvIV( *timeout_sv );
+		}
 
-		RETVAL = THIS->get( url_string );
+		RETVAL = THIS->get( url_string, timeout );
 	OUTPUT:
 		RETVAL
 

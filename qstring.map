@@ -16,7 +16,7 @@ T_QSTRING
 			warn(\"${Package}::$func_name() -- $var is empty\");
 			XSRETURN_UNDEF;
 		}
-		$var = QString(SvPV_nolen($arg));
+		$var = SvUTF8($arg) ? QString::fromUtf8( SvPV_nolen($arg) ) : QString( SvPV_nolen($arg) );
 	}
 
 OUTPUT
@@ -27,4 +27,4 @@ T_QSTRING_PTR
 	sv_setpvn( $arg, (*$var).toUtf8().data(), (*$var).toUtf8().size() );
 
 T_QVARIANT
-	ConvertQVariant( $arg, $var );
+	ConvertQVariant( $arg, &$var );

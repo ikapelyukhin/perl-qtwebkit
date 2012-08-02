@@ -12,7 +12,7 @@ use warnings;
 #our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 #our @EXPORT = qw( );
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 require XSLoader;
 XSLoader::load('Webkit', $VERSION);
@@ -58,13 +58,35 @@ See Webkit::finish() method
 
 =head2 new()
 
+=head2 new( $params )
+
 Returns new Webkit object.
 
-=head2 get()
+$params is a hash reference. The following keys can be set:
+
+=over 4
+
+=item * NoImages - images won't be loaded if true value is set; default is 0.
+
+=item * UserAgent - specified value is sent in User-Agent HTTP request field. By default QtWebkit default value is used.
+
+=back
+
+=head2 get( $url )
+
+=head2 get( $url, $params )
 
 Starts Qt event loop and loads specified URL. When the URL loaded response callback is called.
 
-This method returns Qt application status code. Non-zero status code means an error ocurred.
+This method returns error code. Non-zero code means an error ocurred.
+
+$params is a hash reference. The following keys can be set:
+
+=over 4
+
+=item * Timeout - timeout in milliseconds. If the page isn't loaded in given time the request will terminate and return control back to perl.
+
+=back
 
 =head2 evaluateJavaScript()
 
@@ -133,7 +155,32 @@ True return value works as input in prompt dialog box, false value works as "Can
 
 =head2 setBridgeCallback()
 
-Sets callback for __bridge.bridgeCallback() function. Recieves caller Webkit object as the first parameter.
+Sets callback for __bridge.bridgeCallback() function. Recieves caller Webkit object as the first parameter, argument passed from JavaScript as second parameter.
+
+Doesn't return anything back to JavaScript.
+
+	use Data::Dumper;
+	my $Webkit = Webkit->new();
+
+	# Save arguments passed from JavaScript to file
+	$Webkit->setBridgeCallback( sub {
+		my ( $Webkit, $args ) = @_;
+
+		open ( my $file, ">", "dump.dat" );
+		print $file Dumper( $args );
+		close $file;
+	} );
+
+	$Webkit->setResponseCallback( sub {
+		my ( $Webkit, $ok ) = @_;
+
+		$Webkit->evaluateJavaScript( q^
+			var data = getAwesomeDataFromSomewhere();
+			__bridge.bridgeCallback( data );
+		^ );
+	} );
+
+	$Webkit->get( "http://somesite.url" );
 
 =head2 getUrl()
 

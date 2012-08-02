@@ -21,17 +21,16 @@
 #endif
 
 // TODO:
-// 1. QWebPage::userAgentForUrl
-// 2. QTimer
-// 3. QWebPage::acceptNavigationRequest
+// 1. QWebPage::acceptNavigationRequest
 
 int Webkit::instances = 0;
 int Webkit::argc = 1;
 char* Webkit::argv = { 0 };
 QApplication* Webkit::application;
 
-Webkit::Webkit( ResponseCallback rcb, MessageCallback mcb, PromptCallback pcb, BridgeCallback bcb ){
+Webkit::Webkit( ResponseCallback rcb, MessageCallback mcb, PromptCallback pcb, BridgeCallback bcb, bool no_images, QString user_agent ){
     Webkit::instances++;
+    
     bool use_graphics = true;
 
 #ifdef __EXTENSIVE_WKHTMLTOPDF_QT_HACK__
@@ -45,16 +44,24 @@ Webkit::Webkit( ResponseCallback rcb, MessageCallback mcb, PromptCallback pcb, B
     Webkit::application->setStyle( new MyLooksStyle() );
 #endif
 
-    page  = new CallbackPage( this, mcb, pcb );
+    timer = new QTimer();
+    page  = new CallbackPage( this, mcb, pcb, user_agent );
     frame = page->mainFrame();
-    
     response_callback = rcb;
     bridge_callback   = bcb;
+
+    if ( no_images ) page->settings()->setAttribute( QWebSettings::AutoLoadImages, false );
+    
+    frame->addToJavaScriptWindowObject( "__bridge", this );
 }
 
 Webkit::~Webkit(){
     delete page;
-    if ( --Webkit::instances == 0 ) delete Webkit::application;
+    delete timer;
+    if ( --Webkit::instances == 0 ) {
+	    Webkit::application->quit();
+	    delete Webkit::application;
+    }
 }
 
 void Webkit::processResponse( bool ok ){
@@ -67,8 +74,13 @@ void Webkit::processResponse( bool ok ){
 }
 
 void Webkit::finish(){
-    frame->disconnect( SIGNAL( loadFinished(bool) ), this );
-    emit finished();
+    QObject::disconnect( frame, SIGNAL( loadFinished(bool) ), this, SLOT( processResponse(bool) ) );
+    this->loop = false;
+}
+
+void Webkit::timeout() {
+	this->error = ERROR_TIMEOUT;
+	this->finish();
 }
 
 QString Webkit::getContent() {
@@ -79,13 +91,25 @@ QString Webkit::getUrl(){
     return this->frame->url().toString();
 }
 
-int Webkit::get( QString url_string ){
-    frame->load( QUrl( url_string ) );
+int Webkit::get( QString url_string, unsigned int timeout ){
+    frame->load( QUrl (url_string) );
 
-    QObject::connect( frame, SIGNAL( loadFinished(bool) ), this,        SLOT( processResponse(bool) ) );
-    QObject::connect( this,  SIGNAL( finished() ),         application, SLOT( quit() ) );
+    QObject::connect( frame, SIGNAL( loadFinished(bool) ), this, SLOT( processResponse(bool) ) );
+    if ( timeout ) {
+	    QObject::connect( timer, SIGNAL( timeout() ), this, SLOT( timeout() ) );
+	    this->timer->setSingleShot(true);
+	    this->timer->start(timeout);
+    }
 
-    return application->exec();
+    this->loop  = true;
+    this->error = 0;
+    while ( this->loop ) {
+	    Webkit::application->processEvents();
+    }
+
+    this->timer->stop();
+
+    return this->error;
 }
 
 QVariant Webkit::evaluateJavaScript( QString js ) {
@@ -93,5 +117,9 @@ QVariant Webkit::evaluateJavaScript( QString js ) {
 }
 
 void Webkit::bridgeCallback(){
-    if ( this->response_callback ) this->bridge_callback( this, CALLBACK_BRIDGE );
+    if ( this->response_callback ) this->bridge_callback( this, CALLBACK_BRIDGE, (QVariant*) NULL );
+}
+
+void Webkit::bridgeCallback( QVariant arg ){
+    if ( this->response_callback ) this->bridge_callback( this, CALLBACK_BRIDGE, &arg );
 }

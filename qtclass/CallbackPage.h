@@ -25,12 +25,17 @@ private:
     MessageCallback message_callback;
     PromptCallback prompt_callback;
     Webkit* wk;
+    QString user_agent;
 public:
-    CallbackPage( Webkit* parent, MessageCallback mcb, PromptCallback pcb ) : QWebPage(NULL) {
+    CallbackPage( Webkit* parent, MessageCallback mcb, PromptCallback pcb, QString user_agent = QString() ) : QWebPage(NULL) {
         message_callback = mcb;
         prompt_callback = pcb;
         wk = parent;
+        this->user_agent = user_agent;
+    }
 
+    QString userAgentForUrl( const QUrl &url ) const {
+            return user_agent.isNull() ? QWebPage::userAgentForUrl( url ) : user_agent; 
     }
 
     void javaScriptAlert(QWebFrame*, const QString &msg){

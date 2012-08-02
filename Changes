@@ -1,5 +1,13 @@
 Revision history for Perl extension Webkit.
 
+0.02  Thu Aug  2 03:52:28 MSK 2012
+	* Fixed segfault when calling get() method on the same Webkit object more then once
+	* Fixed response callback being set to \&main::
+	+ Parameters from JavaScript are now passed to bridge callback
+	+ Constructor now accepts NoImages and UserAgent parameters
+	+ Added Timeout parameter to get() method, added QTimer to terminate long-running requests
+	* Other small fixes
+
 0.01  Sun May 20 16:03:57 2012
 	- original version; created by h2xs 1.23 with options
 		-A -n Webkit
