@@ -275,7 +275,8 @@ void ConvertQVariant( SV* arg, const QVariant* var ){
 
 		case QMetaType::QString: {
 			QString* str = (QString*) var;
-			sv_setpvn( arg, str->toUtf8().data(), str->size() );
+			sv_setpvn( arg, str->toUtf8().data(), str->toUtf8().size() );
+			SvUTF8_on( arg );
 			break;
 		}
 
